@@ -37,8 +37,8 @@ s = [model.addVars() for city in cities]
 
 # leave and enter each city only once
 for city1 in cities:
-    model.addConstrs(gp.quicksum(used[city1][city2] for city2 in cities-{city1}) == 1)
-    model.addConstrs(gp.quicksum(used[city2][city1] for city2 in cities-{city1}) == 1) 
+    model.addConstrs(grb.quicksum(used[city1][city2] for city2 in cities-{city1}) == 1)
+    model.addConstrs(grb.quicksum(used[city2][city1] for city2 in cities-{city1}) == 1) 
 ### end model
     
     
