@@ -1,0 +1,57 @@
+import gurobipy as grb
+from gurobipy import GRB
+
+### begin functions
+def mincutphase():
+
+def mincut():
+### end functions
+
+
+
+### begin model
+model = grb.Model()
+
+# read instances file line by line
+with open('TSP-instances/att48.txt') as file:
+    lines = file.readlines()
+
+# process n and m values and then clean list of edges
+# can easily create separate list of edges/weights/etc just don't know if we need them yet???
+for line in lines:
+    entries = line.split()
+    if len(entries) == 2:
+        n = int(entries[0])
+        m = int(entries[1])
+    if len(entries) != 3:
+        lines.remove(line)
+
+# variable for set of cities/vertices
+cities = range(n)
+
+# binary variables to indicate if edge "city1city2" is in tour or not
+used = [[model.addVars(vtype=GRB.BINARY) for city1 in cities] for city2 in cities]
+
+# continuous variable to prevent subtours
+s = [model.addVars() for city in cities]
+
+# leave and enter each city only once
+for city1 in cities:
+    model.addConstrs(gp.quicksum(used[city1][city2] for city2 in cities-{city1}) == 1)
+    model.addConstrs(gp.quicksum(used[city2][city1] for city2 in cities-{city1}) == 1) 
+### end model
+    
+    
+    
+### begin implementation
+model.optimize()
+    
+  
+    
+### begin output
+# just an outline of what hicks wants it to look like
+print('Best tour:')
+for edge in tour:
+    print('%g %g' % tour[edge] % weights[edge])
+print()
+print('The cost of the best tour is: %g' % model.objVal)
