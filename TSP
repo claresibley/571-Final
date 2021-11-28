@@ -1,57 +1,210 @@
+import copy
 import gurobipy as grb
 from gurobipy import GRB
 
-### begin functions
-def mincutphase():
 
-def mincut():
-### end functions
-
-
-
-### begin model
-model = grb.Model()
-
+### begin data processing
 # read instances file line by line
 with open('TSP-instances/att48.txt') as file:
     lines = file.readlines()
 
-# process n and m values and then clean list of edges
-# can easily create separate list of edges/weights/etc just don't know if we need them yet???
+# initialize variables
+G = {}
+data = []
+index = 0
+
+# process input data
 for line in lines:
-    entries = line.split()
-    if len(entries) == 2:
-        n = int(entries[0])
-        m = int(entries[1])
-    if len(entries) != 3:
-        lines.remove(line)
 
-# variable for set of cities/vertices
-cities = range(n)
+    line = line.split()
+    line = [int(i) for i in line]
 
-# binary variables to indicate if edge "city1city2" is in tour or not
-used = [[model.addVars(vtype=GRB.BINARY) for city1 in cities] for city2 in cities]
+    # first line has 2 entries corresponding to # of nodes and edges
+    if len(line) == 2:
+        n = line[0]
+        m = line[1]
 
-# continuous variable to prevent subtours
-s = [model.addVars() for city in cities]
+    # lines with 3 entries include info (head tail weight) for each edge
+    # create graph/dictionary of edge info called G
+    if len(line) == 3:
+        data.append(line) # keep original file format for output
+        weight = line[2]
+        head = line[0] # head node
+        tail = line[1] # tail node
+        if head not in G:
+            G[head] = {}
+        if tail not in G:
+            G[tail] = {}
+        # can travel either direction on each edge
+        G[head][tail] = index, weight
+        G[tail][head] = index, weight
+        index += 1 # update edge index
+### end data processing
 
-# leave and enter each city only once
-for city1 in cities:
-    model.addConstrs(grb.quicksum(used[city1][city2] for city2 in cities-{city1}) == 1)
-    model.addConstrs(grb.quicksum(used[city2][city1] for city2 in cities-{city1}) == 1) 
+
+
+### begin functions
+# function to merge two vertices (used in minimumcutphase)
+def merge(G, s, t):
+
+	# store neighbor and edge info about each vertex 
+    Ns = copy.deepcopy(G[s])	
+    Nt = copy.deepcopy(G[t])
+
+	# account for shared neighbors of s and t
+    N = [n for n in Ns.keys() if n in Nt.keys()]
+	
+	# remove edges connecting other vertices to s and t (including edges between s and t)
+    for n in Ns:
+        del G[n][s]
+    for n in Nt:
+        del G[n][t]
+
+    # delete s and t everywhere
+    del Ns[t]; del Nt[s]; del G[s]; del G[t]
+	
+	# make sure s and t have the same type so we can merge them 
+    if type(s) == int:
+        s = frozenset([s])
+    if type(t) == int:
+        t = frozenset([t])
+
+	# replace s and t by new vertex 
+    st = s.union(t)
+    G[st] = {}
+
+	# edges from s or t to another vertex are replaced by edge weighted with sum of the weights of the previous edge(s)
+    # state both ways to ensure symmetry
+    for n in N:
+        G[st][n] = None, Ns[n][1] + Nt[n][1] # no edge index since we've created a brand new edge
+        G[n][st] = None, Ns[n][1] + Nt[n][1]
+    for n in Ns:
+        if n not in N:
+            G[n][st] = Ns[n]
+            G[st][n] = Ns[n]
+    for n in Nt:
+        if n not in N:
+            G[n][st] = Nt[n]
+            G[st][n] = Nt[n]
+
+    return G
+
+
+# based on reference paper
+# function to find cut-of-the-phase
+def minimumcutphase(G, a):
+    
+    A = [a] # a is an arbitrary vertex
+    V = range(len(G))
+
+    # a subset A of our vertices grows until A is equal to  the set of all vertices V
+    while set(A) != set(V):
+
+        # initialize weight of edges connecting A to desired vertex
+        maxweight = 0
+
+        # find the most tightly connected vertex outside of A
+        for v in G:
+            weight = 0
+            if v not in A:
+                for u in A:
+                    if u in G[v]:
+                        weight += G[u][v][1] # update weight for each adjacent edge
+                if weight > maxweight:
+                    maxweight = weight
+                    z = v # z is most tightly connected vertex so far
+
+        A.append(z)
+
+	# cut the last vertex from the rest of the graph and find weight of that cut
+    lastvertex = A[-1]
+    weight = 0
+    for n in G[lastvertex]:
+        weight += G[lastvertex][n][1]
+
+	# define our cut-of-the-phase, could be integer or frozenset
+    if type(lastvertex) == int:
+        cut = [lastvertex]
+    if type(lastvertex) == frozenset:
+        cut = list(lastvertex)
+
+	# merge last two vertices
+    G = merge(G, A[-1], A[-2])
+
+    return G, weight, cut
+
+
+# based on reference paper
+# find lightest cut-of-the-phase, aka the minimum cut, and weight of that cut
+def minimumcut(G, a):
+
+    # initialize variables
+    mincut = []
+    minweight = float('inf') # arbitrarily large
+
+	# use a copy of G so we don't alter original
+    H = copy.deepcopy(G)
+
+	# apply minimum cut phase algorithm
+    # repeat until H has only one vertex
+    while len(H) > 1:
+        H, weight, cut = minimumcutphase(H, a)
+        if weight < minweight:
+            mincut = cut # lightest cut-of-the-phase so far
+            minweight = weight
+
+    return mincut, minweight
+
+
+# function to create model constraints for subtour elimination
+def subtourelimination(G):
+	
+	# apply minimum cut algorithm using first vertex arbitrarily
+    mincut, minweight = minimumcut(G, 0)
+
+# maybe something we need since there are a couple different defs of minweight in different papers
+    lpweight = 0
+    for u in mincut:
+        for v in G:
+            if v not in mincut:
+                i = G[u][v][0]
+                lpweight += x[i]
+
+    # if weight of minimum cut is less than 2 we violated a subtour elimination constraint
+    # update tour accordingly
+    tour = [] 
+    if lpweight < 2:
+        for i in mincut:
+            model.addConstr(sum(x[i]) >= 2)
+            model.update()
+            model.optimize(subtourelimination(G))
+    else:
+        tour = mincut
+
+    return tour
+### end functions
+
+
+
+### begin model 
+model = grb.Model()
+
+# lp relaxation of binary constraint indicating if each edge is in tour or not
+x = model.addVars(m, vtype=GRB.CONTINUOUS)
+x.LB = 0.0
+x.UB = 1.0
+    
+model.update()
+solution = model.optimize(subtourelimination(G))
+solutionedges = grb.tuplelist(i for i in solution.keys() if x[i] > 0.5)
 ### end model
-    
-    
-    
-### begin implementation
-model.optimize()
-    
-  
-    
+
+
+
 ### begin output
-# just an outline of what hicks wants it to look like
 print('Best tour:')
-for edge in tour:
-    print('%g %g' % tour[edge] % weights[edge])
+for i in solutionedges:
+    print(data[G[i][0]])
 print()
-print('The cost of the best tour is: %g' % model.objVal)
+print('The cost of the best tour is: ' + str(model.objVal))
+### end output
