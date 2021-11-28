@@ -47,14 +47,14 @@ for line in lines:
 # function to merge two vertices (used in minimumcutphase)
 def merge(G, s, t):
 
-	# store neighbor and edge info about each vertex 
+    # store neighbor and edge info about each vertex 
     Ns = copy.deepcopy(G[s])	
     Nt = copy.deepcopy(G[t])
 
-	# account for shared neighbors of s and t
+    # account for shared neighbors of s and t
     N = [n for n in Ns.keys() if n in Nt.keys()]
 	
-	# remove edges connecting other vertices to s and t (including edges between s and t)
+    # remove edges connecting other vertices to s and t (including edges between s and t)
     for n in Ns:
         del G[n][s]
     for n in Nt:
@@ -63,17 +63,17 @@ def merge(G, s, t):
     # delete s and t everywhere
     del Ns[t]; del Nt[s]; del G[s]; del G[t]
 	
-	# make sure s and t have the same type so we can merge them 
+    # make sure s and t have the same type so we can merge them 
     if type(s) == int:
         s = frozenset([s])
     if type(t) == int:
         t = frozenset([t])
 
-	# replace s and t by new vertex 
+    # replace s and t by new vertex 
     st = s.union(t)
     G[st] = {}
 
-	# edges from s or t to another vertex are replaced by edge weighted with sum of the weights of the previous edge(s)
+    # edges from s or t to another vertex are replaced by edge weighted with sum of the weights of the previous edge(s)
     # state both ways to ensure symmetry
     for n in N:
         G[st][n] = None, Ns[n][1] + Nt[n][1] # no edge index since we've created a brand new edge
@@ -116,19 +116,19 @@ def minimumcutphase(G, a):
 
         A.append(z)
 
-	# cut the last vertex from the rest of the graph and find weight of that cut
+    # cut the last vertex from the rest of the graph and find weight of that cut
     lastvertex = A[-1]
     weight = 0
     for n in G[lastvertex]:
         weight += G[lastvertex][n][1]
 
-	# define our cut-of-the-phase, could be integer or frozenset
+    # define our cut-of-the-phase, could be integer or frozenset
     if type(lastvertex) == int:
         cut = [lastvertex]
     if type(lastvertex) == frozenset:
         cut = list(lastvertex)
 
-	# merge last two vertices
+    # merge last two vertices
     G = merge(G, A[-1], A[-2])
 
     return G, weight, cut
@@ -142,10 +142,10 @@ def minimumcut(G, a):
     mincut = []
     minweight = float('inf') # arbitrarily large
 
-	# use a copy of G so we don't alter original
+    # use a copy of G so we don't alter original
     H = copy.deepcopy(G)
 
-	# apply minimum cut phase algorithm
+    # apply minimum cut phase algorithm
     # repeat until H has only one vertex
     while len(H) > 1:
         H, weight, cut = minimumcutphase(H, a)
@@ -159,10 +159,10 @@ def minimumcut(G, a):
 # function to create model constraints for subtour elimination
 def subtourelimination(G):
 	
-	# apply minimum cut algorithm using first vertex arbitrarily
+    # apply minimum cut algorithm using first vertex arbitrarily
     mincut, minweight = minimumcut(G, 0)
 
-# maybe something we need since there are a couple different defs of minweight in different papers
+    # this is where things start to go off the rails a bit
     lpweight = 0
     for u in mincut:
         for v in G:
