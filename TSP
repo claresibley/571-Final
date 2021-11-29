@@ -174,23 +174,33 @@ def minimumcut(G):
 ### begin model 
 model = grb.Model()
 
-# run functions
-mincut, minweight = minimumcut(G)
-
 # lp relaxation of binary constraint indicating if each edge is in tour or not
-model.addVars(m, lb=0.0, ub=1.0, vtype=GRB.CONTINUOUS)
+x = model.addVars(m, obj=weights, lb=0.0, ub=1.0, vtype=GRB.CONTINUOUS)
 model.update()
 model.optimize()
 
 # if weight of minimum cut is less than 2 we violated a subtour elimination constraint
-model.addConstr(grb.quicksum(model.X[i] for i in mincut) >= 2)
-model.update()
-model.optimize()
+while stop == 1:
+    stop = 0
+    mincut, minweight = minimumcut(G)
 
-# objective is to minimize weight of our tour 
-model.setObjective(np.dot(model.X, np.transpose(weights)))
-model.update()
-model.optimize()
+    # update edge weights as x-values
+    cutweight = 0
+    for u in mincut:
+        for v in G[u]:
+            if v not in mincut:
+                i = G[u][v][0]
+                cutweight += model.X[i]
+
+    if minweight < 2: # x-value weights
+        model.addConst(cutweight >= 2) # is this right???
+        stop = 1
+        model.update()
+        model.optimize()
+
+# branch and bound to see if integral
+# november 23 canvas
+
 ### end model
 
 print(model.ObjVal)
@@ -199,9 +209,7 @@ print(model.X)
 
 ### begin output
 print('Best tour:')
-for i in range(m):
-    if model.X[i] > 0.5:
-        print(data[i])
+print(model.X[i])
 print()
 print('The cost of the best tour is: ' + str(model.ObjVal))
 ### end output
