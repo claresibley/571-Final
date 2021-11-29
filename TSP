@@ -27,6 +27,9 @@ for line in lines:
     if len(line) == 2:
         n = line[0]
         m = line[1]
+        # create list of vertex indices (needed for merge function)
+        for i in range(n):
+            vertices.append(i)
 
     # lines with 3 entries include info (head tail weight) for each edge
     # create graph/dictionary of edge info called G
@@ -44,10 +47,6 @@ for line in lines:
         G[head][tail] = index, weight
         G[tail][head] = index, weight
         index += 1 # update edge index
-
-# create list of vertex indices (needed for merge function)
-for i in range(n):
-    vertices.append(i)
 ### end data processing
 
 
@@ -168,27 +167,6 @@ def minimumcut(G):
             minweight = weight
 
     return mincut, minweight
-
-# function to create model constraints for subtour elimination
-def subtourelimination(G):
-	
-    # apply minimum cut algorithm using first vertex arbitrarily
-    mincut, minweight = minimumcut(G)
-
-    # if weight of minimum cut is less than 2 we violated a subtour elimination constraint
-    cutweight = 0
-    for u in mincut:
-        for v in G[u]:
-            if v not in mincut:
-                i = G[u][v][0]
-                cutweight += model.X[i]
-
-    print(cutweight)
-    if cutweight < 2:
-        model.addConstr(grb.quicksum(model.X[i] for i in mincut) >= 2)
-        model.update()    
-
-    return mincut, minweight
 ### end functions
 
 
@@ -196,18 +174,23 @@ def subtourelimination(G):
 ### begin model 
 model = grb.Model()
 
+# run functions
+mincut, minweight = minimumcut(G)
+
 # lp relaxation of binary constraint indicating if each edge is in tour or not
-x = model.addVars(m, lb=0.0, ub=1.0, vtype=GRB.CONTINUOUS)
+model.addVars(m, lb=0.0, ub=1.0, vtype=GRB.CONTINUOUS)
 model.update()
+model.optimize()
 
 # if weight of minimum cut is less than 2 we violated a subtour elimination constraint
-model.addConstr(grb.quicksum(model.getVars()) >= 2)
+model.addConstr(grb.quicksum(model.X[i] for i in mincut) >= 2)
 model.update()
+model.optimize()
 
 # objective is to minimize weight of our tour 
-model.setObjective(np.dot(model.getVars(), np.transpose(weights)))
+model.setObjective(np.dot(model.X, np.transpose(weights)))
 model.update()
-model.optimize(subtourelimination(G))
+model.optimize()
 ### end model
 
 print(model.ObjVal)
