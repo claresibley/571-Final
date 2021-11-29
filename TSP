@@ -1,16 +1,20 @@
 import copy
+import numpy as np
+import random
 import gurobipy as grb
 from gurobipy import GRB
 
 
 ### begin data processing
 # read instances file line by line
-with open('TSP-instances/att48.txt') as file:
+with open('test.txt') as file:
     lines = file.readlines()
 
 # initialize variables
 G = {}
 data = []
+weights = []
+vertices = []
 index = 0
 
 # process input data
@@ -27,7 +31,8 @@ for line in lines:
     # lines with 3 entries include info (head tail weight) for each edge
     # create graph/dictionary of edge info called G
     if len(line) == 3:
-        data.append(line) # keep original file format for output
+        data.append(line) # keep original edge format for output
+        weights.append(line[2]) # keep weight info for output
         weight = line[2]
         head = line[0] # head node
         tail = line[1] # tail node
@@ -39,8 +44,11 @@ for line in lines:
         G[head][tail] = index, weight
         G[tail][head] = index, weight
         index += 1 # update edge index
-### end data processing
 
+# create list of vertex indices (needed for merge function)
+for i in range(n):
+    vertices.append(i)
+### end data processing
 
 
 ### begin functions
@@ -55,12 +63,14 @@ def merge(G, s, t):
     N = [n for n in Ns.keys() if n in Nt.keys()]
 	
     # remove edges connecting other vertices to s and t (including edges between s and t)
+    # update set of edge indices still in use
     for n in Ns:
         del G[n][s]
     for n in Nt:
         del G[n][t]
 
-    # delete s and t everywhere
+    # delete s and t everywhere and update existing vertices
+    vertices.remove(s); vertices.remove(t)
     del Ns[t]; del Nt[s]; del G[s]; del G[t]
 	
     # make sure s and t have the same type so we can merge them 
@@ -71,6 +81,7 @@ def merge(G, s, t):
 
     # replace s and t by new vertex 
     st = s.union(t)
+    vertices.append(st)
     G[st] = {}
 
     # edges from s or t to another vertex are replaced by edge weighted with sum of the weights of the previous edge(s)
@@ -89,19 +100,19 @@ def merge(G, s, t):
 
     return G
 
-
 # based on reference paper
 # function to find cut-of-the-phase
 def minimumcutphase(G, a):
     
-    A = [a] # a is an arbitrary vertex
-    V = range(len(G))
+    A = [a]
+    V = vertices
 
-    # a subset A of our vertices grows until A is equal to  the set of all vertices V
+    # a subset A of our vertices grows until A is equal to the set of all vertices V
     while set(A) != set(V):
 
-        # initialize weight of edges connecting A to desired vertex
+        # initialize variables
         maxweight = 0
+        z = None
 
         # find the most tightly connected vertex outside of A
         for v in G:
@@ -133,55 +144,51 @@ def minimumcutphase(G, a):
 
     return G, weight, cut
 
-
 # based on reference paper
 # find lightest cut-of-the-phase, aka the minimum cut, and weight of that cut
-def minimumcut(G, a):
+def minimumcut(G):
 
     # initialize variables
     mincut = []
     minweight = float('inf') # arbitrarily large
 
-    # use a copy of G so we don't alter original
+    # use copy of G so we don't alter the original
     H = copy.deepcopy(G)
 
     # apply minimum cut phase algorithm
-    # repeat until H has only one vertex
-    while len(H) > 1:
+    # repeat until G has only one vertex remaining
+    while len(vertices) > 1:
+        print(vertices)
+        # choose starting vertex a arbitrarily
+        a = random.choice(vertices)
         H, weight, cut = minimumcutphase(H, a)
+
         if weight < minweight:
             mincut = cut # lightest cut-of-the-phase so far
             minweight = weight
 
     return mincut, minweight
 
-
 # function to create model constraints for subtour elimination
 def subtourelimination(G):
 	
     # apply minimum cut algorithm using first vertex arbitrarily
-    mincut, minweight = minimumcut(G, 0)
-
-    # this is where things start to go off the rails a bit
-    lpweight = 0
-    for u in mincut:
-        for v in G:
-            if v not in mincut:
-                i = G[u][v][0]
-                lpweight += x[i]
+    mincut, minweight = minimumcut(G)
 
     # if weight of minimum cut is less than 2 we violated a subtour elimination constraint
-    # update tour accordingly
-    tour = [] 
-    if lpweight < 2:
-        for i in mincut:
-            model.addConstr(sum(x[i]) >= 2)
-            model.update()
-            model.optimize(subtourelimination(G))
-    else:
-        tour = mincut
+    cutweight = 0
+    for u in mincut:
+        for v in G[u]:
+            if v not in mincut:
+                i = G[u][v][0]
+                cutweight += model.X[i]
 
-    return tour
+    print(cutweight)
+    if cutweight < 2:
+        model.addConstr(grb.quicksum(model.X[i] for i in mincut) >= 2)
+        model.update()    
+
+    return mincut, minweight
 ### end functions
 
 
@@ -190,21 +197,28 @@ def subtourelimination(G):
 model = grb.Model()
 
 # lp relaxation of binary constraint indicating if each edge is in tour or not
-x = model.addVars(m, vtype=GRB.CONTINUOUS)
-x.LB = 0.0
-x.UB = 1.0
-    
+x = model.addVars(m, lb=0.0, ub=1.0, vtype=GRB.CONTINUOUS)
 model.update()
-solution = model.optimize(subtourelimination(G))
-solutionedges = grb.tuplelist(i for i in solution.keys() if x[i] > 0.5)
+
+# if weight of minimum cut is less than 2 we violated a subtour elimination constraint
+model.addConstr(grb.quicksum(model.getVars()) >= 2)
+model.update()
+
+# objective is to minimize weight of our tour 
+model.setObjective(np.dot(model.getVars(), np.transpose(weights)))
+model.update()
+model.optimize(subtourelimination(G))
 ### end model
 
+print(model.ObjVal)
+print(model.X)
 
 
 ### begin output
 print('Best tour:')
-for i in solutionedges:
-    print(data[G[i][0]])
+for i in range(m):
+    if model.X[i] > 0.5:
+        print(data[i])
 print()
-print('The cost of the best tour is: ' + str(model.objVal))
+print('The cost of the best tour is: ' + str(model.ObjVal))
 ### end output
