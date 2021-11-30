@@ -1,13 +1,16 @@
 import copy
-import numpy as np
 import random
+import time
+import numpy as np
 import gurobipy as grb
 from gurobipy import GRB
+from collections import deque
+import math
 
 
 ### begin data processing
 # read instances file line by line
-with open('test.txt') as file:
+with open('.txt') as file:
     lines = file.readlines()
 
 # initialize variables
@@ -15,6 +18,8 @@ G = {}
 data = []
 weights = []
 vertices = []
+heads = []
+tails = []
 index = 0
 
 # process input data
@@ -35,10 +40,12 @@ for line in lines:
     # create graph/dictionary of edge info called G
     if len(line) == 3:
         data.append(line) # keep original edge format for output
-        weights.append(line[2]) # keep weight info for output
         weight = line[2]
+        weights.append(weight)
         head = line[0] # head node
+        heads.append(head)
         tail = line[1] # tail node
+        tails.append(tail)
         if head not in G:
             G[head] = {}
         if tail not in G:
@@ -110,7 +117,7 @@ def minimumcutphase(G, a):
     while set(A) != set(V):
 
         # initialize variables
-        maxweight = 0
+        maxweight = -1
         z = None
 
         # find the most tightly connected vertex outside of A
@@ -123,8 +130,11 @@ def minimumcutphase(G, a):
                 if weight > maxweight:
                     maxweight = weight
                     z = v # z is most tightly connected vertex so far
+                    print("check1")
 
         A.append(z)
+
+    print("check2")
 
     # cut the last vertex from the rest of the graph and find weight of that cut
     lastvertex = A[-1]
@@ -160,8 +170,9 @@ def minimumcut(G):
         print(vertices)
         # choose starting vertex a arbitrarily
         a = random.choice(vertices)
+        print("a=", a)
         H, weight, cut = minimumcutphase(H, a)
-
+        print("check1")
         if weight < minweight:
             mincut = cut # lightest cut-of-the-phase so far
             minweight = weight
@@ -170,38 +181,73 @@ def minimumcut(G):
 ### end functions
 
 
+start = time.time()
 
 ### begin model 
 model = grb.Model()
 
 # lp relaxation of binary constraint indicating if each edge is in tour or not
-x = model.addVars(m, obj=weights, lb=0.0, ub=1.0, vtype=GRB.CONTINUOUS)
+model.addVars(m, obj=weights, lb=0.0, ub=1.0, vtype=GRB.CONTINUOUS)
 model.update()
 model.optimize()
 
-# if weight of minimum cut is less than 2 we violated a subtour elimination constraint
+# create new graph with edge weight corresponding to model.X values
+stop = 1
 while stop == 1:
     stop = 0
-    mincut, minweight = minimumcut(G)
 
-    # update edge weights as x-values
-    cutweight = 0
-    for u in mincut:
-        for v in G[u]:
-            if v not in mincut:
-                i = G[u][v][0]
-                cutweight += model.X[i]
+    F = {}
+    index = 0
+    while index < m:
+        head = heads[index]
+        if head not in F:
+            F[head] = {}
+        tail = tails[index]
+        if tail not in F:
+            F[tail] = {}
+        # can travel either direction on each edge
+        F[head][tail] = index, model.X[index]
+        F[tail][head] = index, model.X[index]
+        index += 1 # update edge index
 
-    if cutweight < 2: 
-        model.addConst(cutweight >= 2) # is this right???
+    mincut, minweight = minimumcut(F)
+
+    
+    # if weight of minimum cut is less than 2 we violated a subtour elimination constraint
+    weightconstraints = []
+    if minweight < 2: 
+        w = model.addConstr(minweight >= 2) 
         stop = 1
+        weightconstraints.append(w)
         model.update()
         model.optimize()
 
-# branch and bound to see if integral
-# november 23 canvas
+print("Number of Constraints: ", len(weightconstraints))
+model.remove(weightconstraints)
+model.update()
 
+# initialize zero and one vectors
+zeros = np.zeros(len(model.X))
+ones = np.ones(len(model.X))
+
+# test if our result is arbitrarily close to being integral, otherwise we branch
+integraltest = np.isclose(model.X, zeros) + np.isclose(model.X, ones)
+if sum(integraltest) == len(model.X):
+    status = 'integral'
+else:
+    status = 'branch'
+
+if status == 'integral':
+    solution = model.X
+elif status == 'branch':
+    # extend queue sending two subproblems this time
+
+model.update()
+model.optimize()
 ### end model
+
+end = time.time()
+print('Run Time: {} seconds'.format(end - start))
 
 print(model.ObjVal)
 print(model.X)
@@ -209,7 +255,9 @@ print(model.X)
 
 ### begin output
 print('Best tour:')
-print(model.X[i])
+for x in model.X:
+    if math.isclose(x, 1) is True:
+        print()
 print()
-print('The cost of the best tour is: ' + str(model.ObjVal))
+print('The cost of the best tour is: ' + str(np.dot(model.X, np.transpose(weights))))
 ### end output
