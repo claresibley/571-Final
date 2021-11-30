@@ -181,9 +181,10 @@ def minimumcut(G):
 ### end functions
 
 
-start = time.time()
 
 ### begin model 
+start = time.time()
+
 model = grb.Model()
 
 # lp relaxation of binary constraint indicating if each edge is in tour or not
@@ -241,19 +242,17 @@ if status == 'integral':
     solution = model.X
 elif status == 'branch':
     # extend queue sending two subproblems this time
-
-model.update()
-model.optimize()
+    model.update()
+    model.optimize()
+    
+end = time.time()
 ### end model
 
-end = time.time()
-print('Run Time: {} seconds'.format(end - start))
-
-print(model.ObjVal)
-print(model.X)
 
 
 ### begin output
+print('Run Time: {} seconds'.format(end - start))
+
 print('Best tour:')
 for x in model.X:
     if math.isclose(x, 1) is True:
